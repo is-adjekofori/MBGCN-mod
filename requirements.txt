@@ -1,0 +1,13 @@
+# Core runtime deps. On Colab, torch/numpy/pandas/scipy/tqdm are preinstalled;
+# the pip line in COLAB_SETUP.md installs only what's missing.
+torch
+numpy
+pandas
+scipy
+tqdm
+absl-py
+setproctitle
+
+# Optional: only needed for the live visdom dashboard (i.e. WITHOUT --no_vis).
+# Headless/Colab runs (--no_vis=true) do not import this.
+# visdom

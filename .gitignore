@@ -1,0 +1,22 @@
+# --- data (lives on Google Drive, not in git) ---
+dataset/
+KuaiLive/
+Tmall/
+*.npz
+*.npy
+sample_file/
+
+# --- model outputs / checkpoints ---
+output/
+*.pkl
+
+# --- python ---
+__pycache__/
+*.pyc
+*.pyo
+.ipynb_checkpoints/
+
+# --- misc ---
+*.log
+.DS_Store
+__MACOSX/

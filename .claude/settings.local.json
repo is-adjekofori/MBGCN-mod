@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pdfinfo /rs/is_adjekofori/Projects/personal/fyp/MBGCN_t/KuaiLive_dataset.pdf)",
+      "Bash(awk -F, 'NR>1{if\\($1>mx\\)mx=$1; if\\(mn==\"\"||$1<mn\\)mn=$1} END{print \"min\",mn,\"max\",mx}' click.csv)",
+      "Bash(awk -F, 'NR>1{if\\($3>mx\\)mx=$3; if\\(mn==\"\"||$3<mn\\)mn=$3} END{print \"min\",mn,\"max\",mx}' click.csv)",
+      "Bash(awk -F, 'NR>1{if\\($1>mx\\)mx=$1; if\\(mn==\"\"||$1<mn\\)mn=$1} END{print \"min\",mn,\"max\",mx}' streamer.csv)",
+      "Bash(awk -F, 'NR>1{if\\($1>mx\\)mx=$1; if\\(mn==\"\"||$1<mn\\)mn=$1} END{print \"min\",mn,\"max\",mx}' user.csv)",
+      "Bash(time python3 derive_click_dataset.py --src KuaiLive --out dataset/click_interaction)"
+    ]
+  }
+}
