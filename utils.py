@@ -2,6 +2,7 @@ import torch
 import numpy as np
 import pandas as pd
 
+import csv
 import random
 import setproctitle
 import os
@@ -62,11 +63,42 @@ class VisManager(object):
         # Headless when --no_vis is set (Colab / no visdom server). All plotting
         # calls degrade to stdout prints; the training/eval loop is unaffected.
         self.headless = bool(getattr(flag_obj, "no_vis", False))
+        self.__init_logging(flag_obj)
         self.set_visdom()
         self.show_basic_info(flag_obj)
 
     def __get_port(self, flag_obj):
         self.port = flag_obj.port
+
+    def __init_logging(self, flag_obj):
+        """Set up durable CSV logs, independent of visdom.
+
+        Written under the same dir as the model checkpoint:
+          <output>/<dataset>/<name>/metrics.csv  -- one row per validation
+                                                     (epoch + every metric), and
+          <output>/<dataset>/<name>/scalars.csv  -- long format (epoch,name,value)
+                                                     for loss / timing / metrics.
+        Use these to plot learning curves for the thesis.
+        """
+        self.log_dir = os.path.join(
+            flag_obj.output, flag_obj.dataset_name, flag_obj.name
+        )
+        os.makedirs(self.log_dir, exist_ok=True)
+        self.metrics_csv = os.path.join(self.log_dir, "metrics.csv")
+        self.scalars_csv = os.path.join(self.log_dir, "scalars.csv")
+        self.current_epoch = -1
+
+    def set_epoch(self, epoch):
+        """Tell the logger which epoch subsequent updates belong to."""
+        self.current_epoch = epoch
+
+    def _append_row(self, path, header, row):
+        write_header = not os.path.exists(path)
+        with open(path, "a", newline="") as f:
+            w = csv.writer(f)
+            if write_header:
+                w.writerow(header)
+            w.writerow(row)
 
     def set_visdom(self):
         if self.headless:
@@ -104,6 +136,12 @@ class VisManager(object):
         if type(value) == torch.Tensor:
             value = value.item()
 
+        # durable log (both headless and visdom modes)
+        self._append_row(
+            self.scalars_csv, ["epoch", "name", "value"],
+            [self.current_epoch, title, value],
+        )
+
         if self.vis is None:
             print("[{}] {}".format(title, value))
             return
@@ -117,6 +155,13 @@ class VisManager(object):
             setattr(self, title + "_step", step + 1)
 
     def update_metrics(self, record):
+        # one wide row per validation: epoch + every metric (easy to chart)
+        titles = list(record.keys())
+        self._append_row(
+            self.metrics_csv,
+            ["epoch"] + titles,
+            [self.current_epoch] + [record[t]._metric for t in titles],
+        )
         for title, value in record.items():
             self.update_line(title, value._metric)
 

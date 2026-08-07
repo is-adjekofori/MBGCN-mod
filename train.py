@@ -85,6 +85,7 @@ class TrainManager(object):
         self.set_leaderboard()
 
         for epoch in range(self.flags_obj.epoch):
+            self.vm.set_epoch(epoch)
             self.train_one_epoch()
 
             is_last = (epoch + 1) == self.flags_obj.epoch
