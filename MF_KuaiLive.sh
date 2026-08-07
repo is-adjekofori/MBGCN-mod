@@ -28,9 +28,9 @@ L2='1e-4'
 epoch='400'
 eval_every='5'
 es_patience='10'
-batch_size='2048'
+batch_size='8192'              # ~2.76M click pairs/epoch; large batch cuts overhead
 test_batch_size='256'          # sampled eval gathers [B x (1+10000)] candidates
-num_workers='0'
+num_workers='2'
 
 # Fixed name so MBGCN_KuaiLive.sh can reference the output directory.
 name='click_interaction-MF-pretrain'

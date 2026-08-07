@@ -19,11 +19,15 @@ create_embeddings='False'
 es_patience='10'
 embedding_size='64'
 lamb='1'
-num_workers='0'
+# MBGCN recomputes the full-graph propagation once PER BATCH, so that fixed cost
+# is amortised over the batch. With the click target (~2.76M pairs/epoch) a large
+# batch means far fewer propagations per epoch -> much faster epochs. Drop this if
+# you hit CUDA OOM (e.g. 4096 on a 16GB T4).
+num_workers='2'                  # overlap CPU batch prep with GPU compute
 path='./'
 epoch='400'
 eval_every='5'                   # run (expensive) validation every N epochs
-batch_size='2048'
+batch_size='8192'
 test_batch_size='512'
 loss_mode='mean'
 no_vis='false'                   # set 'true' on headless envs (Colab) to skip visdom

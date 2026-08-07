@@ -91,9 +91,7 @@ class TrainManager(object):
             if (epoch + 1) % self.flags_obj.eval_every == 0 or is_last:
                 self.validation()
                 self.update_leaderboard(epoch)
-                stop = self.es.step(
-                    list(self.metric_dict.values())[0]._metric, epoch
-                )
+                stop = self.es.step(list(self.metric_dict.values())[0]._metric, epoch)
                 if stop == True:
                     break
 
@@ -144,9 +142,9 @@ class TrainManager(object):
                     propagate_result,
                     users.to(self.device),
                     candidates.to(self.device),
-                )                                          # [B, 1 + num_neg]
+                )  # [B, 1 + num_neg]
                 pos_score = scores[:, 0:1]
-                rank = (scores[:, 1:] > pos_score).sum(dim=1) + 1   # [B]
+                rank = (scores[:, 1:] > pos_score).sum(dim=1) + 1  # [B]
 
                 for metric in self.metric_dict:
                     self.metric_dict[metric](rank)
@@ -175,7 +173,6 @@ class TrainManager(object):
         metric_list = list(self.metric_dict.values())
         metric = metric_list[0]._metric
         if metric > self.max_metric:
-            print("Here\n\n\n\n")
             self.max_metric = metric
             self.max_epoch = epoch
 
