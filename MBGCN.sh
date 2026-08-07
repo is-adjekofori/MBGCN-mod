@@ -31,6 +31,7 @@ batch_size='8192'
 test_batch_size='512'
 loss_mode='mean'
 no_vis='false'                   # set 'true' on headless envs (Colab) to skip visdom
+resume='false'                   # 'true' to continue from the best saved checkpoint
 exp_tag='fyp'                    # suffix used in the experiment name
 
 relation='buy,cart,collect,click'
@@ -101,6 +102,7 @@ run() {
                 --test_batch_size "${test_batch_size}" \
                 --loss_mode "${loss_mode}" \
                 --no_vis="${no_vis}" \
+                --resume="${resume}" \
                 --create_embeddings "${create_embeddings}" \
                 --es_patience "${es_patience}" \
                 --embedding_size "${embedding_size}" \

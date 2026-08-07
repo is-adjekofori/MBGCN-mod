@@ -21,5 +21,6 @@ test_batch_size='256'
 create_embeddings='False'
 pretrain_path='output/click_interaction/click_interaction-MF-pretrain'
 no_vis='true'    # Colab: log to stdout instead of a visdom server
+resume='true'    # continue from the best checkpoint if a prior run was interrupted
 
 run

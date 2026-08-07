@@ -44,6 +44,7 @@ python main.py \
     --dataset_name "${dataset_name}" \
     --path "${path}" \
     --no_vis=true \
+    --resume=true \
     --relation "${relation}" \
     --create_embeddings "${create_embeddings}" \
     --embedding_size "${embedding_size}" \

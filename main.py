@@ -23,6 +23,10 @@ flags.DEFINE_integer("port", 33337, "Port to show visualization results for visd
 flags.DEFINE_bool(
     "no_vis", False, "Disable the visdom dashboard; log metrics to stdout (headless/Colab)"
 )
+flags.DEFINE_bool(
+    "resume", False,
+    "Resume from the best saved checkpoint (checkpoint.pkl) in the run's output dir if present",
+)
 flags.DEFINE_integer("batch_size", 2048, "Batch size")
 flags.DEFINE_integer("test_batch_size", 512, "Test batch size")
 flags.DEFINE_integer("embedding_size", 32, "Embedding Size")

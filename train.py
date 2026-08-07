@@ -29,6 +29,26 @@ class TrainManager(object):
         ).to(self.device)
         self.opt = optim.Adam(self.model.parameters(), lr=flags_obj.lr)
 
+        # Resume from the best checkpoint if requested and one exists. This loads
+        # weights + optimizer state; leaderboard / early-stop state is restored in
+        # train() (after set_leaderboard). Training continues from best_epoch + 1.
+        self.start_epoch = 0
+        self._resume_ckpt = None
+        if flags_obj.resume and self.cm.has_checkpoint():
+            ckpt = self.cm.load_checkpoint(map_location=self.device)
+            self.model.load_state_dict(ckpt["model"])
+            self.opt.load_state_dict(ckpt["optimizer"])
+            self.start_epoch = ckpt["epoch"] + 1
+            self._resume_ckpt = ckpt
+            print(
+                ">>> Resuming from checkpoint: best {} @ epoch {}; "
+                "continuing at epoch {}".format(
+                    ckpt["max_metric"], ckpt["epoch"], self.start_epoch
+                )
+            )
+        elif flags_obj.resume:
+            print(">>> --resume set but no checkpoint found; starting fresh.")
+
         # Sampled-candidate metrics at the KuaiLive paper's k = {5, 10, 20}.
         # The first entry (Recall10) drives early stopping / the leaderboard.
         self.metric_dict = {
@@ -84,7 +104,21 @@ class TrainManager(object):
     def train(self):
         self.set_leaderboard()
 
-        for epoch in range(self.flags_obj.epoch):
+        # Restore leaderboard + early-stop state and trim logs when resuming.
+        if self._resume_ckpt is not None:
+            c = self._resume_ckpt
+            self.max_metric = c["max_metric"]
+            self.max_epoch = c["max_epoch"]
+            self.es.count = c["es_count"]
+            self.es.max_metric = c["es_max_metric"]
+            self.vm.resume_from(self.start_epoch)  # drop rows at epoch >= start
+            print(
+                ">>> Restored leaderboard (best {} @ {}) and early-stop count {}".format(
+                    self.max_metric, self.max_epoch, self.es.count
+                )
+            )
+
+        for epoch in range(self.start_epoch, self.flags_obj.epoch):
             self.vm.set_epoch(epoch)
             self.train_one_epoch()
 
@@ -181,6 +215,20 @@ class TrainManager(object):
                 "New Record! {} @ epoch {}!".format(metric, epoch), self.leaderboard
             )
             self.cm.model_save(self.model)
+            # Full checkpoint for resume: weights + optimizer + epoch + state.
+            # We only checkpoint on a NEW RECORD, which resets early stopping, so
+            # store es_count=0 and es_max_metric=this best (its post-step state).
+            self.cm.save_checkpoint(
+                {
+                    "model": self.model.state_dict(),
+                    "optimizer": self.opt.state_dict(),
+                    "epoch": epoch,
+                    "max_metric": self.max_metric,
+                    "max_epoch": self.max_epoch,
+                    "es_count": 0,
+                    "es_max_metric": self.max_metric,
+                }
+            )
             print(metric, self.max_metric)
 
     def test(self):

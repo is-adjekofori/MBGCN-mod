@@ -54,6 +54,23 @@ class ContentManager(object):
     def model_load(self, model):
         model.load_state_dict(torch.load(os.path.join(self.path, "model.pkl")))
 
+    # --- full training checkpoint (for resume) -----------------------------
+    # model.pkl holds only the best weights (for final eval); checkpoint.pkl
+    # additionally holds optimizer + epoch + early-stop/leaderboard state so a
+    # resumed run continues faithfully rather than restarting from scratch.
+    @property
+    def checkpoint_path(self):
+        return os.path.join(self.path, "checkpoint.pkl")
+
+    def has_checkpoint(self):
+        return os.path.exists(self.checkpoint_path)
+
+    def save_checkpoint(self, state):
+        torch.save(state, self.checkpoint_path)
+
+    def load_checkpoint(self, map_location="cpu"):
+        return torch.load(self.checkpoint_path, map_location=map_location)
+
 
 class VisManager(object):
     def __init__(self, flag_obj):
@@ -91,6 +108,30 @@ class VisManager(object):
     def set_epoch(self, epoch):
         """Tell the logger which epoch subsequent updates belong to."""
         self.current_epoch = epoch
+
+    def resume_from(self, start_epoch):
+        """Drop already-logged rows at ``epoch >= start_epoch`` before resuming.
+
+        Keeps the logs single-valued per epoch when a run is restarted from a
+        checkpoint (the epochs from start_epoch onward will be re-logged).
+        """
+        for path in (self.metrics_csv, self.scalars_csv):
+            self.__prune_epochs(path, start_epoch)
+
+    def __prune_epochs(self, path, start_epoch):
+        if not os.path.exists(path):
+            return
+        with open(path, newline="") as f:
+            rows = list(csv.reader(f))
+        if not rows:
+            return
+        header, data = rows[0], rows[1:]
+        ei = header.index("epoch")
+        kept = [r for r in data if r and int(float(r[ei])) < start_epoch]
+        with open(path, "w", newline="") as f:
+            w = csv.writer(f)
+            w.writerow(header)
+            w.writerows(kept)
 
     def _append_row(self, path, header, row):
         write_header = not os.path.exists(path)
