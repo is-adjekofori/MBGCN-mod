@@ -18,7 +18,7 @@ COMMON=(
   --id_dim 64 --action_dim 64 --hidden 128
   --num_heads 8 --num_blocks 1 --dropout 0.1
   --reg 5e-5 --lr 1e-3
-  --epochs 400 --eval_every 5 --es_patience 10
+  --epochs 400 --eval_every 2 --es_patience 5
   --batch_size 256 --test_batch_size 64 --cand_chunk 1024
   --num_workers 2 --gpu --resume
   --pretrain_path "${PRETRAIN}"

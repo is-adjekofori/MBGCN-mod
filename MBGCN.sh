@@ -16,7 +16,7 @@ dataset_name='Tmall'
 gpu='true'                       # absl bool: use --gpu=true / --gpu=false
 gpu_id='0'
 create_embeddings='False'
-es_patience='10'
+es_patience='5'
 embedding_size='64'
 lamb='1'
 # MBGCN recomputes the full-graph propagation once PER BATCH, so that fixed cost
@@ -26,7 +26,7 @@ lamb='1'
 num_workers='2'                  # overlap CPU batch prep with GPU compute
 path='./'
 epoch='400'
-eval_every='5'                   # run (expensive) validation every N epochs
+eval_every='2'                   # run (expensive) validation every N epochs
 batch_size='8192'
 test_batch_size='512'
 loss_mode='mean'
