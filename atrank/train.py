@@ -14,6 +14,7 @@ Real training is meant for a GPU (Colab), like MBGCN; on CPU use --smoke to
 sanity-check the full path on a tiny subset.
 """
 import argparse
+import csv
 import os
 import sys
 import time
@@ -45,6 +46,34 @@ def read_data_size(path, name):
     with open(os.path.join(path, name, "data_size.txt")) as f:
         u, i = f.readline().strip().split()
     return int(u), int(i)
+
+
+def append_csv(path, header, row):
+    """Append one row, writing the header first if the file is new."""
+    new = not os.path.exists(path)
+    with open(path, "a", newline="") as f:
+        w = csv.writer(f)
+        if new:
+            w.writerow(header)
+        w.writerow(row)
+
+
+def prune_csv(path, start_epoch):
+    """On resume, drop rows with epoch >= start_epoch so we don't duplicate them
+    (mirrors MBGCN's VisManager.resume_from)."""
+    if not os.path.exists(path):
+        return
+    with open(path) as f:
+        rows = list(csv.reader(f))
+    if not rows:
+        return
+    header, data = rows[0], rows[1:]
+    ei = header.index("epoch")
+    kept = [r for r in data if r and int(r[ei]) < start_epoch]
+    with open(path, "w", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(header)
+        w.writerows(kept)
 
 
 def parse_caps(spec):
@@ -160,6 +189,8 @@ def main():
     os.makedirs(os.path.dirname(args.save), exist_ok=True)
     ckpt_path = args.save + ".ckpt"
     best_path = args.save + ".pkl"       # best-validation model, loaded for final test
+    metrics_csv = args.save + ".metrics.csv"   # wide: epoch + every metric (per validation)
+    scalars_csv = args.save + ".scalars.csv"   # long: epoch,name,value (metrics + loss)
 
     best, best_epoch, start_epoch = -1.0, -1, 0
 
@@ -174,6 +205,8 @@ def main():
         es.count, es.max_metric = c["es_count"], c["es_max_metric"]
         np.random.set_state(c["np_rng"])
         torch.set_rng_state(c["torch_rng"])
+        prune_csv(metrics_csv, start_epoch)     # drop rows >= resume point
+        prune_csv(scalars_csv, start_epoch)
         print(f">>> resumed from {ckpt_path}: next epoch {start_epoch}, "
               f"best Recall@10={best:.4f}@{best_epoch}, es_count={es.count}", flush=True)
 
@@ -202,9 +235,17 @@ def main():
 
         val = evaluate(model, val_loader, device, metrics, args.cand_chunk)
         r10 = val["Recall10"]
-        print(f"[epoch {epoch}] loss={total/max(nb,1):.4f} time={time.time()-t0:.1f}s "
+        avg_loss = total / max(nb, 1)
+        print(f"[epoch {epoch}] loss={avg_loss:.4f} time={time.time()-t0:.1f}s "
               f"| val Recall@10={r10:.4f} NDCG@10={val['NDCG10']:.4f} "
               f"Recall@20={val['Recall20']:.4f}", flush=True)
+
+        # durable logs (survive a crash; same wide schema as MBGCN's metrics.csv)
+        keys = list(metrics.keys())
+        append_csv(metrics_csv, ["epoch"] + keys, [epoch] + [val[k] for k in keys])
+        append_csv(scalars_csv, ["epoch", "name", "value"], [epoch, "loss", avg_loss])
+        for k in keys:
+            append_csv(scalars_csv, ["epoch", "name", "value"], [epoch, k, val[k]])
 
         if r10 > best:
             best, best_epoch = r10, epoch
