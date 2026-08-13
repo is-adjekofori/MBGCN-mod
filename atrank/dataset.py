@@ -54,6 +54,13 @@ class _SeqStore:
         self.allowed = (
             None if allowed_actions is None else np.asarray(sorted(allowed_actions))
         )
+        # True when the allowed filter keeps every action -> the filter is a no-op
+        # and (in global mode) we can slice just the max_len tail of the prefix
+        # instead of scanning it whole.
+        self._allowed_all = (
+            self.allowed is None
+            or set(int(a) for a in self.allowed) == set(range(N_ACTIONS))
+        )
         self._locate_clicks()
 
     def _locate_clicks(self):
@@ -106,13 +113,26 @@ class _SeqStore:
         Both modes preserve chronological order.
         """
         s = self.offsets[u]
-        idx = np.arange(target_pos)
+        hi = s + target_pos
+        if per_action_caps is None and drop_pos is None and self._allowed_all:
+            # Fast path (training headline): keep only the max_len most recent
+            # events. O(max_len) -- no scan of the (up to ~16k long) full prefix.
+            lo = hi - max_len if target_pos > max_len else s
+            strm = self.ev_streamer[lo:hi]
+            act = self.ev_action[lo:hi]
+            ts = self.ev_ts[lo:hi]
+            elapsed_min = np.maximum(0, (target_ts - ts)) // 60000
+            return (strm.astype(np.int64), act.astype(np.int64),
+                    bucketize_minutes(elapsed_min).astype(np.int64))
+        # General path (per-action caps / held-out drop / behaviour subset).
+        strm = self.ev_streamer[s:hi]
+        act = self.ev_action[s:hi]
+        ts = self.ev_ts[s:hi]
         if drop_pos is not None:
-            idx = idx[~np.isin(idx, drop_pos)]
-        strm = self.ev_streamer[s + idx]
-        act = self.ev_action[s + idx]
-        ts = self.ev_ts[s + idx]
-        if self.allowed is not None:
+            keep = np.ones(strm.shape[0], dtype=bool)
+            keep[np.asarray(drop_pos, dtype=np.int64)] = False
+            strm, act, ts = strm[keep], act[keep], ts[keep]
+        if self.allowed is not None and not self._allowed_all:
             keep = np.isin(act, self.allowed)
             strm, act, ts = strm[keep], act[keep], ts[keep]
         if per_action_caps is not None:

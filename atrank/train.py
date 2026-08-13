@@ -89,11 +89,13 @@ def parse_caps(spec):
 
 
 @torch.no_grad()
-def evaluate(model, loader, device, metrics, cand_chunk):
+def evaluate(model, loader, device, metrics, cand_chunk, log_every=0, tag="val"):
     model.eval()
     for m in metrics.values():
         m.start()
-    for users, cand, strm, act, tb, mask in loader:
+    n_batches = len(loader)
+    t0 = time.time()
+    for bi, (users, cand, strm, act, tb, mask) in enumerate(loader, 1):
         scores = model.score_candidates(
             strm.to(device), act.to(device), tb.to(device), mask.to(device),
             cand.to(device), chunk=cand_chunk,
@@ -102,6 +104,8 @@ def evaluate(model, loader, device, metrics, cand_chunk):
         rank = (scores[:, 1:] > pos_score).sum(dim=1) + 1     # strict >, ties -> pos
         for m in metrics.values():
             m(rank.cpu())
+        if log_every and bi % log_every == 0:
+            print(f"  [{tag}] batch {bi}/{n_batches} ({time.time()-t0:.0f}s)", flush=True)
     for m in metrics.values():
         m.stop()
     return {k: v._metric for k, v in metrics.items()}
@@ -132,6 +136,8 @@ def main():
     ap.add_argument("--batch_size", type=int, default=256)
     ap.add_argument("--test_batch_size", type=int, default=64)
     ap.add_argument("--cand_chunk", type=int, default=1024)
+    ap.add_argument("--log_every", type=int, default=200,
+                    help="print intra-epoch progress every N batches (0=off)")
     ap.add_argument("--num_workers", type=int, default=0)
     ap.add_argument("--gpu", action="store_true")
     ap.add_argument("--seed", type=int, default=42)
@@ -215,7 +221,9 @@ def main():
         if not isinstance(trainset, Subset):
             trainset.newit()                       # resample negatives each epoch
         t0 = time.time()
-        total, nb = 0.0, 0
+        n_batches = len(train_loader)
+        total = torch.zeros((), device=device)   # accumulate on-device (sync only when logging)
+        nb = 0
         for strm, act, tb, mask, pos, neg in train_loader:
             strm, act, tb, mask = (x.to(device) for x in (strm, act, tb, mask))
             pos, neg = pos.to(device), neg.to(device)
@@ -224,18 +232,23 @@ def main():
             opt.zero_grad()
             loss.backward()
             opt.step()
-            total += loss.item()
+            total += loss.detach()
             nb += 1
+            if args.log_every and nb % args.log_every == 0:
+                print(f"  epoch {epoch} batch {nb}/{n_batches} "
+                      f"avg_loss={(total/nb).item():.4f} "
+                      f"({nb * args.batch_size:,} ex, {time.time()-t0:.0f}s)", flush=True)
 
+        avg_loss = (total / max(nb, 1)).item()
         is_last = epoch == args.epochs - 1
         if (epoch + 1) % args.eval_every != 0 and not is_last:
-            print(f"[epoch {epoch}] loss={total/max(nb,1):.4f} time={time.time()-t0:.1f}s",
+            print(f"[epoch {epoch}] loss={avg_loss:.4f} time={time.time()-t0:.1f}s",
                   flush=True)
             continue
 
-        val = evaluate(model, val_loader, device, metrics, args.cand_chunk)
+        val = evaluate(model, val_loader, device, metrics, args.cand_chunk,
+                       log_every=args.log_every, tag="val")
         r10 = val["Recall10"]
-        avg_loss = total / max(nb, 1)
         print(f"[epoch {epoch}] loss={avg_loss:.4f} time={time.time()-t0:.1f}s "
               f"| val Recall@10={r10:.4f} NDCG@10={val['NDCG10']:.4f} "
               f"Recall@20={val['Recall20']:.4f}", flush=True)
@@ -273,7 +286,8 @@ def main():
         model.load_state_dict(
             torch.load(best_path, map_location=device, weights_only=False)["model"])
         print(f"loaded best model (Recall@10={best:.4f}@{best_epoch}) for test", flush=True)
-    test = evaluate(model, test_loader, device, metrics, args.cand_chunk)
+    test = evaluate(model, test_loader, device, metrics, args.cand_chunk,
+                    log_every=args.log_every, tag="test")
     print("=== TEST ===", flush=True)
     for k, v in test.items():
         print(f"{k}: {v:.4f}", flush=True)
