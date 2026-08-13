@@ -206,8 +206,16 @@ def main():
         start_epoch = c["epoch"] + 1
         best, best_epoch = c["best_metric"], c["best_epoch"]
         es.count, es.max_metric = c["es_count"], c["es_max_metric"]
-        np.random.set_state(c["np_rng"])
-        torch.set_rng_state(c["torch_rng"])
+        # RNG restore is best-effort. torch.get_rng_state() is a CPU ByteTensor,
+        # but loading with map_location=cuda moves it onto the GPU, which
+        # torch.set_rng_state() rejects ("must be a torch.ByteTensor"). Coerce it
+        # back to a CPU uint8 tensor, and never let RNG restore block the resume.
+        try:
+            np.random.set_state(c["np_rng"])
+            torch.set_rng_state(c["torch_rng"].to("cpu", torch.uint8))
+        except Exception as e:
+            print(f">>> warning: RNG state not restored ({e}); continuing anyway",
+                  flush=True)
         prune_csv(metrics_csv, start_epoch)     # drop rows >= resume point
         prune_csv(scalars_csv, start_epoch)
         print(f">>> resumed from {ckpt_path}: next epoch {start_epoch}, "
