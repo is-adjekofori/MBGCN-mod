@@ -22,6 +22,7 @@ import time
 import numpy as np
 import torch
 from torch.utils.data import DataLoader, Subset
+from tqdm import tqdm
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from loss import bprloss                                    # noqa: E402
@@ -89,13 +90,11 @@ def parse_caps(spec):
 
 
 @torch.no_grad()
-def evaluate(model, loader, device, metrics, cand_chunk, log_every=0, tag="val"):
+def evaluate(model, loader, device, metrics, cand_chunk, tag="val"):
     model.eval()
     for m in metrics.values():
         m.start()
-    n_batches = len(loader)
-    t0 = time.time()
-    for bi, (users, cand, strm, act, tb, mask) in enumerate(loader, 1):
+    for users, cand, strm, act, tb, mask in tqdm(loader, desc=tag, dynamic_ncols=True):
         scores = model.score_candidates(
             strm.to(device), act.to(device), tb.to(device), mask.to(device),
             cand.to(device), chunk=cand_chunk,
@@ -104,8 +103,6 @@ def evaluate(model, loader, device, metrics, cand_chunk, log_every=0, tag="val")
         rank = (scores[:, 1:] > pos_score).sum(dim=1) + 1     # strict >, ties -> pos
         for m in metrics.values():
             m(rank.cpu())
-        if log_every and bi % log_every == 0:
-            print(f"  [{tag}] batch {bi}/{n_batches} ({time.time()-t0:.0f}s)", flush=True)
     for m in metrics.values():
         m.stop()
     return {k: v._metric for k, v in metrics.items()}
@@ -137,7 +134,7 @@ def main():
     ap.add_argument("--test_batch_size", type=int, default=64)
     ap.add_argument("--cand_chunk", type=int, default=1024)
     ap.add_argument("--log_every", type=int, default=200,
-                    help="print intra-epoch progress every N batches (0=off)")
+                    help="update the tqdm loss postfix every N batches (0=off; throttles GPU sync)")
     ap.add_argument("--num_workers", type=int, default=0)
     ap.add_argument("--gpu", action="store_true")
     ap.add_argument("--seed", type=int, default=42)
@@ -221,10 +218,10 @@ def main():
         if not isinstance(trainset, Subset):
             trainset.newit()                       # resample negatives each epoch
         t0 = time.time()
-        n_batches = len(train_loader)
         total = torch.zeros((), device=device)   # accumulate on-device (sync only when logging)
         nb = 0
-        for strm, act, tb, mask, pos, neg in train_loader:
+        pbar = tqdm(train_loader, desc=f"epoch {epoch}", dynamic_ncols=True)
+        for strm, act, tb, mask, pos, neg in pbar:
             strm, act, tb, mask = (x.to(device) for x in (strm, act, tb, mask))
             pos, neg = pos.to(device), neg.to(device)
             logits, l2 = model(strm, act, tb, mask, pos, neg)
@@ -235,9 +232,7 @@ def main():
             total += loss.detach()
             nb += 1
             if args.log_every and nb % args.log_every == 0:
-                print(f"  epoch {epoch} batch {nb}/{n_batches} "
-                      f"avg_loss={(total/nb).item():.4f} "
-                      f"({nb * args.batch_size:,} ex, {time.time()-t0:.0f}s)", flush=True)
+                pbar.set_postfix(loss=f"{(total/nb).item():.4f}")   # throttled GPU sync
 
         avg_loss = (total / max(nb, 1)).item()
         is_last = epoch == args.epochs - 1
@@ -246,8 +241,7 @@ def main():
                   flush=True)
             continue
 
-        val = evaluate(model, val_loader, device, metrics, args.cand_chunk,
-                       log_every=args.log_every, tag="val")
+        val = evaluate(model, val_loader, device, metrics, args.cand_chunk, tag="val")
         r10 = val["Recall10"]
         print(f"[epoch {epoch}] loss={avg_loss:.4f} time={time.time()-t0:.1f}s "
               f"| val Recall@10={r10:.4f} NDCG@10={val['NDCG10']:.4f} "
@@ -286,8 +280,7 @@ def main():
         model.load_state_dict(
             torch.load(best_path, map_location=device, weights_only=False)["model"])
         print(f"loaded best model (Recall@10={best:.4f}@{best_epoch}) for test", flush=True)
-    test = evaluate(model, test_loader, device, metrics, args.cand_chunk,
-                    log_every=args.log_every, tag="test")
+    test = evaluate(model, test_loader, device, metrics, args.cand_chunk, tag="test")
     print("=== TEST ===", flush=True)
     for k, v in test.items():
         print(f"{k}: {v:.4f}", flush=True)
